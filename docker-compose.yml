@@ -1,0 +1,82 @@
+version: "3.8"
+services:
+  node:
+    restart: "on-failure"
+    image: ${QUORUM_DOCKER_IMAGE}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--proxy", "off", "http://localhost:8545"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        DDIR=/qdata/dd
+        mkdir -p $${DDIR}
+        if [ -z "$$(ls -A $${DDIR})" ]; then
+          cp -RT /configs/node $${DDIR}
+        fi
+        GENESIS_FILE="$${DDIR}/genesis.json"
+        NETWORK_ID=$$(cat $${GENESIS_FILE} | grep chainId | awk -F " " '{print $$2}' | awk -F "," '{print $$1}')
+        GETH_ARGS_raft="--raft --raftport 50400"
+        GETH_ARGS_istanbul="--emitcheckpoints --istanbul.blockperiod 1 --mine --minerthreads 1 --syncmode full"
+        geth --datadir $${DDIR} init $${GENESIS_FILE}
+        geth \
+          --identity node \
+          --datadir $${DDIR} \
+          --permissioned \
+          --nodiscover \
+          --verbosity 5 \
+          --networkid $${NETWORK_ID} \
+          --rpc \
+          --rpccorsdomain "*" \
+          --rpcvhosts "*" \
+          --rpcaddr 0.0.0.0 \
+          --rpcport 8545 \
+          --rpcapi admin,db,eth,debug,miner,net,shh,txpool,personal,web3,quorum,${QUORUM_CONSENSUS} \
+          --ws \
+          --wsaddr 0.0.0.0 \
+          --wsorigins "*" \
+          --wsport 8645 \
+          --port 21000 \
+          --unlock 0 \
+          --allow-insecure-unlock \
+          --password $${DDIR}/keystore/password.txt \
+          $${GETH_ARGS_${QUORUM_CONSENSUS}}
+    hostname: node
+    ports:
+      - "8545:8545"
+      - "8645:8645"
+    environment:
+      PRIVATE_CONFIG: ignore
+    volumes:
+      - node_vol:/qdata
+      - ./configs:/configs:ro
+  cakeshop:
+    image: ${CAKESHOP_DOCKER_IMAGE}
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--proxy=off", "http://localhost:8999/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        DDIR=/qdata/cakeshop/local
+        mkdir -p $${DDIR}
+        cp -RT /configs/cakeshop $${DDIR}
+        java -Xms128M -Xmx128M -Dcakeshop.config.dir=/qdata/cakeshop -Dlogging.path=/qdata/logs/cakeshop -jar /opt/cakeshop/cakeshop.war
+    hostname: cakeshop
+    ports:
+      - "8999:8999"
+    volumes:
+      - cakeshop_vol:/qdata
+      - ./configs:/configs:ro
+volumes:
+  "node_vol":
+  "cakeshop_vol":

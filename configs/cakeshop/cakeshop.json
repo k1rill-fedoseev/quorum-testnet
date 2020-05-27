@@ -1,0 +1,6 @@
+[
+  {
+    "name": "node",
+    "rpcUrl": "http://node:8545"
+  }
+]
